@@ -9,6 +9,7 @@ const DieterySchema = new mongoose.Schema({//this is the schema for the every da
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Meal'
     }],
+    Day: String,
     TotalCalories:Number,
     TotalProtein:Number,
     TotalCarbs:Number,

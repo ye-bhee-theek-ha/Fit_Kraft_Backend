@@ -153,6 +153,7 @@ const createDietery = asyncHandler(async(req,res)=>{
         });
     }
 })
+
 const getDietery = asyncHandler(async(req,res)=>{
     const dietery = await Dietery.find({ UserId: req.params.id }).populate('Meals')
     res.status(200).json(dietery)

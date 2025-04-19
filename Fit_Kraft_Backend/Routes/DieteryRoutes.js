@@ -7,7 +7,7 @@ const calculateMealTotals = require('../middleware/calculateMealTotals');
 router.use(express.json());
 
 router.post("/create", calculateMealTotals, createDietery);
-router.get("/get/:id", getDietery);
+router.get("/get/:id/", getDietery);
 router.get("/getMeals/:name/:userId", getMeals);//for search bar
 router.put("/update/:id", calculateMealTotals, updateDieteryMeals);
 router.post("/createMeal", createMeal);
