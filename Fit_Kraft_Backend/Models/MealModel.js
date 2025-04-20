@@ -10,17 +10,11 @@ const MealSchema = new mongoose.Schema({
     Ingredients:Array,
     Instructions:String,
     Image:String,
-    Category:String,//tells wheather it is a meal or a snack
+    Category:String,
     UserCreated_ID:{
         type: String,
         default: false
     },
-    completed:{
-        type:Boolean,
-        default:false
-    }
-
-
 })
 
 

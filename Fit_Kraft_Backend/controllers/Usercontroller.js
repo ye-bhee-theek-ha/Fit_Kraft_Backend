@@ -230,7 +230,10 @@ const checkOnboardingStatus = asyncHandler(async (req, res) => {
             user.gender && user.goal && user.activityLevel;
 
         res.status(200).json({
-            onboardingComplete: !!isOnboardingComplete, // Convert to boolean
+            onboardingComplete: !!isOnboardingComplete,
+            _id: user._id,
+            name: user.name,
+            email: user.email,
         });
 
     } catch (error) {

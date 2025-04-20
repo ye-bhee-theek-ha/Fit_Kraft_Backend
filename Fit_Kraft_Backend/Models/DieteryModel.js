@@ -2,18 +2,23 @@ const mongoose = require('mongoose')
 const Meal = require('./MealModel')
 
 
-const DieterySchema = new mongoose.Schema({//this is the schema for the every day dietery plan  
+const DieterySchema = new mongoose.Schema({  
     UserId:String,
     Date:Date,
     Meals:[{
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'Meal'
+        ref: 'Meal',
+        isCompleted:{
+            type:Boolean,
+            default:false
+        }
     }],
     Day: String,
     TotalCalories:Number,
     TotalProtein:Number,
     TotalCarbs:Number,
     TotalFats:Number,
+
 
 })
 

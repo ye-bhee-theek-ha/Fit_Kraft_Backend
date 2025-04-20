@@ -7,7 +7,6 @@ const Stored_ExercisesSchema=new mongoose.Schema({
     bodyPart:String,
     equipment:String,
     User_Created_ID:String
-    
 })
 
 const Stored_Exercises=mongoose.model('Stored_Exercises',Stored_ExercisesSchema)
