@@ -305,4 +305,4 @@ const getMeals = asyncHandler(async(req,res)=>{
 
 
 
-module.exports = {createMeal,getDietery,getMeals,updateDieteryMeals,createDietery}    
+module.exports = {createMeal,getDietary,getMeals,updateDieteryMeals,createDietery}    

@@ -19,6 +19,7 @@ const DieterySchema = new mongoose.Schema({
     TotalCarbs:Number,
     TotalFats:Number,
 
+    
 
 })
 
