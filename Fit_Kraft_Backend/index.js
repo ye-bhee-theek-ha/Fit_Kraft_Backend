@@ -32,6 +32,7 @@ app.use("/user", require("./Routes/UserRoutes"));
 app.use("/exercise", require("./Routes/ExerciseRoutes"));   
 app.use("/workout", require("./Routes/WorkoutRoutes"));
 app.use("/dietery", require("./Routes/DieteryRoutes"));
+app.use("/mentalwellness",require('./Routes/MentallWellnessRoutes'))
 
 app.use(ErrorHandler);
 

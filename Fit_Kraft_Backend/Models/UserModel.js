@@ -11,7 +11,10 @@ const userSchema = new mongoose.Schema({
     age: { type: Number,  },
     gender: { type: String, },
     goal: { type: String,  },
+
+    
     activityLevel: { type: String,  },
+    
     bmi: { type: Number,  },
     bmr: { type: Number,  },
     workouts: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Workout' }],

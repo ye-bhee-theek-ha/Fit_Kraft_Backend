@@ -227,14 +227,65 @@ const DeleteUser = asyncHandler(async (req, res) => {
 
 
 const UpdateUser = asyncHandler(async (req, res) => {
-    const user = await User.findByIdAndUpdate(req.user.id, req.body, { new: true, runValidators: true });
+    // Define the fields that are allowed to be updated (password removed)
+    const allowedFields = [
+        'name', 'nickname', 'email', // password removed
+        'height', 'weight', 'age', 'gender', 'goal'
+    ];
 
-    if (!user) {
-        return res.status(404).json({ message: "User not found" });
+    // Create an object to hold only the allowed update data
+    const updateData = {};
+
+    // Populate updateData with allowed fields present in req.body
+    allowedFields.forEach(field => {
+        // Check if the field exists in the request body
+        if (req.body.hasOwnProperty(field)) {
+             // Add allowed fields directly to the update object
+             updateData[field] = req.body[field];
+        }
+    });
+
+    // Check if there's anything valid to update
+    if (Object.keys(updateData).length === 0) {
+        return res.status(400).json({ message: "No valid fields provided for update" });
     }
 
-    res.status(200).json({ message: "User updated successfully", user });
+    try {
+        // Find the user by ID and update only the fields present in updateData
+        // Using { $set: updateData } explicitly tells MongoDB to only update these fields
+        const user = await User.findByIdAndUpdate(
+            req.user.id, // Get user ID from authenticated request (e.g., middleware)
+            { $set: updateData },
+            {
+                new: true, // Return the updated document
+                runValidators: true, // Ensure schema validators run on update
+                context: 'query' // Important for some validators during update operations
+            }
+        );
+
+        if (!user) {
+            // Use 404 if the user ID was valid format but not found
+            return res.status(404).json({ message: "User not found" });
+        }
+
+        // Exclude password from the returned user object for security
+        // (Even though we don't update it here, we still don't want to send the existing hash)
+        const userResponse = user.toObject(); // Convert mongoose doc to plain object if needed
+        delete userResponse.password;
+
+        res.status(200).json({ message: "User updated successfully", user: userResponse });
+
+    } catch (error) {
+        // Handle potential errors, e.g., validation errors
+        if (error.name === 'ValidationError') {
+            return res.status(400).json({ message: "Validation failed", errors: error.errors });
+        }
+        // Log other unexpected errors for debugging
+        console.error("Error updating user:", error);
+        res.status(500).json({ message: "Server error during user update" });
+    }
 });
+
 
 const checkOnboardingStatus = asyncHandler(async (req, res) => {
     try {
