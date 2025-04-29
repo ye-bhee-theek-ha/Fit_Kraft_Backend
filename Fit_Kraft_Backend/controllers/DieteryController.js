@@ -1,7 +1,7 @@
 const express = require('express')
 const asyncHandler = require('express-async-handler')
 const Meal = require('../Models/MealModel')
-const Dietery = require('../Models/DieteryModel')
+const Dietary = require('../Models/DieteryModel')
 
 const createMeal = asyncHandler(async(req,res)=>{
     const {name,calories,protein,carbs,fats,ingredients,instructions,image,category} = req.body
@@ -193,7 +193,7 @@ const getDietary = asyncHandler(async(req, res) => {
         const dietary = await Dietary.find(query)
             .populate({
                 path: 'Meals',
-                select: 'Name CaloriesPerServing ProteinPerServing CarbsPerServing FatsPerServing ServingSize Servings'
+                // select: 'Name CaloriesPerServing ProteinPerServing CarbsPerServing FatsPerServing ServingSize Servings'
             })
             .sort({ Date: -1 })
             .lean();

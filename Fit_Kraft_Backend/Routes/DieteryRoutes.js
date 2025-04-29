@@ -8,7 +8,7 @@ router.use(express.json());
 
 router.post("/create", calculateMealTotals, createDietery);
 router.get("/get/:id/", getDietary);
-router.get("/getMeals/:name/:userId", getMeals);//for search bar
+router.get("/getMeals/:name/:userId", getMeals);
 router.put("/update/:id", calculateMealTotals, updateDieteryMeals);
 router.post("/createMeal", createMeal);
 

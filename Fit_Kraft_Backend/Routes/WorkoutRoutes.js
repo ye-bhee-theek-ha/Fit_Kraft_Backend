@@ -1,5 +1,5 @@
 const express = require("express");
-const {createWorkout,getWorkout,updateUserWorkout,updateExerciseDuration,deleteWorkout,updateExcercises,getWorkoutsLast7Days,updateExerciseCompletedStatus}=require('../controllers/Workoutcontroller')
+const {createWorkout,getWorkout,updateUserWorkout,updateExerciseDuration,deleteWorkout,updateExcercises,getWorkoutsLast7Days,updateExerciseCompletedStatus, addExerciseToWorkout, updateExerciseInWorkout, removeExerciseFromWorkout,}=require('../controllers/Workoutcontroller')
 const calculateWorkoutMetrics = require('../middleware/calculateWorkoutMetrics');
 const router = express.Router();
 const { protect } = require("../middleware/authMiddleware");
@@ -12,7 +12,19 @@ router.get("/get/:userId",getWorkout)
 router.get('/get/last7days/:userid',getWorkoutsLast7Days)//for last 7 days
 router.put('/update/duration/:userid/:workoutId/:exerciseId',updateExerciseDuration)   //for update exercise duration in workout it also autocalculates total duration 
 router.delete("/delete/:id",deleteWorkout)  
-router.put('/update/completestatue/:exerciseId',updateExerciseCompletedStatus) //for updating completed status of exercise
+router.put('/update/completestatus/:exerciseId',updateExerciseCompletedStatus) //for updating completed status of exercise
+
+// Add a single exercise to a specific workout
+// POST /workout/:workoutId/exercises
+router.post("/:workoutId/exercises", addExerciseToWorkout);
+
+// Update a single exercise within a specific workout
+// PUT /workout/:workoutId/exercises/:exerciseId
+router.put("/:workoutId/exercises/:exerciseId", updateExerciseInWorkout);
+
+// Remove a single exercise from a specific workout
+// DELETE /workout/:workoutId/exercises/:exerciseId
+router.delete("/:workoutId/exercises/:exerciseId", removeExerciseFromWorkout);
 
 
 module.exports=router
