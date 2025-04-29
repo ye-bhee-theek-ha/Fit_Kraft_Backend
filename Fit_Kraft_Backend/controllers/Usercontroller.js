@@ -1,8 +1,9 @@
 const express =require('express')
 const asyncHandler=require('express-async-handler')
 const User=require('../Models/UserModel')
+const Badges=require('../Models/BadgesModel')
 const calculateMetrics = require('../middleware/calculateMetrics');
-
+const mongoose = require('mongoose');
 
 
 const jwt = require('jsonwebtoken');
@@ -86,6 +87,25 @@ const CreateUser = asyncHandler(async (req, res) => {
     }
 });
 
+const getUserBadges = async (req, res) => {
+    try {
+      const userId = req.params.userId;
+  
+      // Find the user by their ID and populate the 'badges' field
+      const user = await User.findById(userId).populate('badges');
+  
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+  
+      // Send the user's badges as the response
+      res.status(200).json({ badges: user.badges });
+  
+    } catch (error) {
+      console.error('Error fetching user badges:', error);
+      res.status(500).json({ message: 'Failed to fetch user badges' });
+    }
+  };
 
 const Onboarding = asyncHandler(async (req, res) => {
     try {
@@ -242,11 +262,69 @@ const checkOnboardingStatus = asyncHandler(async (req, res) => {
     }
 });
 
+const createBadge = async (req, res) => {
+    try {
+      const { name, description, iconUrl, criteriaType, criteriaValue, category, points } = req.body;
+  
+      // Create a new badge instance
+      const newBadge = new Badges({
+        name,
+        description,
+        iconUrl,
+        criteriaType,
+        criteriaValue,
+        category,
+        points,
+      });
+  
+      // Save the new badge to the database
+      const savedBadge = await newBadge.save();
+  
+      // Send a successful response with the created badge
+      res.status(201).json(savedBadge); // 201 Created status code
+  
+    } catch (error) {
+      console.error('Error creating badge:', error);
+      if (error.code === 11000 && error.keyPattern && error.keyPattern.name) {
+        return res.status(400).json({ message: 'Badge name already exists.' });
+      }
+      res.status(500).json({ message: 'Failed to create badge' });
+    }
+  };
+
+  const assignBadgeToUser = async (req, res) => {
+    try {
+      const userid = req.params.userid;
+      const badgeid = req.params.badgeid;
+  
+      
+  
+      // Find the user by their ID
+      const user = await User.findById(userid);
+  
+      if (!user) {
+        return res.status(404).json({ message: `User with ID ${userId} not found` }); // 404 Not Found
+      }
+  
+      // Check if the badge ID is not already in the user's badges array
+      if (!user.badges.includes(badgeid)) {
+        // Add the badge ID to the user's badges array
+        user.badges.push(badgeid);
+  
+        // Save the updated user document
+        await user.save();
+        return res.status(200).json({ message: 'Badge assigned successfully', badgeid: badgeid, userid: userid }); // 200 OK
+      } else {
+        return res.status(200).json({ message: 'Badge already exists for this user', badgeid: badgeid, userid: userid }); // 200 OK - but indicate already present
+      }
+  
+    } catch (error) {
+      console.error('Error assigning badge to user:', error);
+      return res.status(500).json({ message: 'Failed to assign badge', error: error.message }); // 500 Internal Server Error
+    }
+  };
 
 
-
-
-
-module.exports = {getUser, CreateUser, DeleteUser, UpdateUser, loginUser, checkOnboardingStatus, Onboarding};
+module.exports = {getUser, CreateUser, DeleteUser,getUserBadges, UpdateUser, loginUser, checkOnboardingStatus, Onboarding,createBadge,assignBadgeToUser};
 
 
