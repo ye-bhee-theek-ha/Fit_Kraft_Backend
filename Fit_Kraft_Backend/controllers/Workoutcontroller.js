@@ -2,7 +2,11 @@ const express = require('express')
 const asyncHandler = require('express-async-handler')
 const Workout = require('../Models/WorkoutModels')
 const Exercise = require('../Models/ExerciseModel')
+const axios = require('axios');
 const Stored_Exercises = require('../Models/Stored_Exercises')
+const User=require('../Models/UserModel')
+const PYTHON_API_URL = 'http://127.0.0.1:5000/generate-workout';
+const WORKOUT_CREATE_URL = `http://localhost:5000/workout/create`;
 
 
 const createWorkout = asyncHandler(async (req, res) => {
@@ -284,14 +288,19 @@ const updateExerciseDuration = asyncHandler(async (req, res) => {
 
 
 const getWorkoutsLast7Days = asyncHandler(async (req, res) => {
-    const { userid } = req.params;
+    
+    const { userId } = req.params;
     const now = new Date();
     const sevenDaysAgo = new Date(now);
     sevenDaysAgo.setDate(now.getDate() - 7);
-    
+
+    // Normalize to full day range
+    sevenDaysAgo.setHours(0, 0, 0, 0);
+    now.setHours(23, 59, 59, 999);
+
     try {
         const workouts = await Workout.find({
-            userId: userid,
+            userId: userId,
             date: {
                 $gte: sevenDaysAgo,
                 $lte: now
@@ -302,15 +311,16 @@ const getWorkoutsLast7Days = asyncHandler(async (req, res) => {
                 model: 'Exercise',
                 select: 'name type duration sets reps weight completed'
             })
-            .sort({ date: -1 }); // Sort by date in descending order (newest first)
+            .sort({ date: -1 });
 
         res.status(200).json(workouts);
-        
+
     } catch (error) {
         console.error('Error fetching workouts for the last 7 days:', error);
         res.status(500).json({ message: 'Failed to fetch workouts', error: error.message });
     }
 });
+
 
 
 const updateExerciseCompletedStatus = asyncHandler(async (req, res) => {
@@ -724,9 +734,273 @@ const removeExerciseFromWorkout = asyncHandler(async (req, res) => {
 });
 
 
+
+//Helper code for LLM preprocessing 
+function preprocess_history_for_llm(last_week_workout_input) {
+    // ... (Keep the exact same implementation as the last version) ...
+    // This function transforms the input history into a format suitable for the LLM prompt.
+    // For brevity, not repeating the full code here. It should be the same as before.
+    const processed_history = [];
+    if (!Array.isArray(last_week_workout_input) || !last_week_workout_input.length) {
+        return processed_history;
+    }
+    try {
+        // Ensure dates are comparable and sort
+        const historyWithParsedDates = last_week_workout_input.map(entry => {
+            let parsed_date = entry.date instanceof Date ? entry.date : new Date(0); // Default for unparseable
+            if (typeof entry.date === 'string') {
+                try {
+                    parsed_date = new Date(entry.date.endsWith('Z') ? entry.date : entry.date + 'Z');
+                } catch (e) { console.warn(`Could not parse date string: ${entry.date}`); }
+            }
+            return {...entry, parsed_date};
+        }).sort((a, b) => b.parsed_date - a.parsed_date);
+
+        for (const day_workout of historyWithParsedDates.slice(0, 7)) {
+            const day_exercises_for_llm = [];
+            if (!Array.isArray(day_workout.exercises)) continue;
+
+            for (const ex_hist of day_workout.exercises) {
+                if (!ex_hist || typeof ex_hist !== 'object' || !ex_hist.name) continue;
+                const llm_ex_hist = {
+                    name: ex_hist.name,
+                    type: ex_hist.type || "Unknown",
+                    duration: ex_hist.duration || { minutes: 0, seconds: 0 },
+                    sets: typeof ex_hist.sets === 'number' ? ex_hist.sets : null,
+                    reps: typeof ex_hist.reps === 'number' ? ex_hist.reps : null,
+                    weight: typeof ex_hist.weight === 'number' ? ex_hist.weight : null,
+                    completed: ex_hist.completed || false
+                };
+                if (llm_ex_hist.reps === null && llm_ex_hist.duration && (llm_ex_hist.duration.minutes > 0 || llm_ex_hist.duration.seconds > 0)) {
+                    llm_ex_hist.reps = 1;
+                }
+                day_exercises_for_llm.push(llm_ex_hist);
+            }
+            if (day_exercises_for_llm.length > 0) {
+                let history_date_str = "Unknown Past Day";
+                if (day_workout.parsed_date && day_workout.parsed_date.getTime() !== new Date(0).getTime()) {
+                     // Format as YYYY-MM-DD (DayOfWeek)
+                    history_date_str = `${day_workout.parsed_date.getFullYear()}-${String(day_workout.parsed_date.getMonth() + 1).padStart(2, '0')}-${String(day_workout.parsed_date.getDate()).padStart(2, '0')} (${day_workout.parsed_date.toLocaleDateString('en-US', { weekday: 'long' })})`;
+                }
+                processed_history.push({
+                    day_identifier: history_date_str,
+                    exercises: day_exercises_for_llm
+                });
+            }
+        }
+    } catch (e) {
+        console.warn(`Error processing workout history: ${e.message}`);
+    }
+    return processed_history;
+}
+
+// --- Helper Function to Infer Experience Level ---
+function infer_experience_level(activity_level_str) {
+    // ... (Keep the exact same implementation as the last version) ...
+    if (!activity_level_str || typeof activity_level_str !== 'string') {
+        return "Beginner"; 
+    }
+    const activity_level_lower = activity_level_str.toLowerCase();
+    if (activity_level_lower.includes("sedentary") || activity_level_lower.includes("lightly active")) {
+        return "Beginner";
+    } else if (activity_level_lower.includes("moderately active")) {
+        return "Intermediate";
+    } else if (activity_level_lower.includes("very active") || activity_level_lower.includes("extremely active")) {
+        return "Advanced";
+    }
+    return "Beginner";
+}
+
+
+const generate_workout=asyncHandler(async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const requestBody = req.body || {}; 
+        const planning_preferences_from_req = requestBody.planning_preferences || {};
+
+        if (!userId) {
+            return res.status(400).json({ message: "userId path parameter is required." });
+        }
+
+        const userFromDb = await User.findById(userId); // Your mock or real DB call
+        if (!userFromDb) {
+            console.error(`User not found in DB for ID: ${userId}`);
+            return res.status(404).json({ message: `User with ID ${userId} not found.` });
+        }
+        console.log(`Workspaceed user from DB: ${userFromDb.name}`);
+
+        const userDataForPythonApi = { /* ... (same as before, extracting relevant fields from userFromDb) ... */
+            name: userFromDb.name, nickname: userFromDb.nickname, email: userFromDb.email,
+            height: userFromDb.height, weight: userFromDb.weight, age: userFromDb.age,
+            gender: userFromDb.gender, goal: userFromDb.goal, activityLevel: userFromDb.activityLevel,
+            bmi: userFromDb.bmi, bmr: userFromDb.bmr
+        };
+
+        let lastWeekWorkoutData = [];
+        const historyUrl = `http://localhost:5000/workout/get/last7days/${userId}`;
+        try {
+            console.log(`Workspaceing last 7 days workout history from: ${historyUrl}`);
+            const historyResponse = await axios.get(historyUrl);
+            if (historyResponse.data && Array.isArray(historyResponse.data)) {
+                lastWeekWorkoutData = historyResponse.data;
+                console.log(`Workspaceed ${lastWeekWorkoutData.length} workout entries from history.`);
+            } else {
+                console.log(`No workout history found or invalid format for user ${userId}.`);
+            }
+        } catch (historyError) {
+            console.warn(`Could not fetch workout history for user ${userId}: ${historyError.message}.`);
+        }
+        
+        const experienceLevel = planning_preferences_from_req.experienceLevel || infer_experience_level(userFromDb.activityLevel);
+        const availableDaysForNewPlan = planning_preferences_from_req.availableDaysForNewPlan || 5;
+        const timePerSessionMinutes = planning_preferences_from_req.timePerSessionMinutes || 60;
+        const availableEquipment = planning_preferences_from_req.availableEquipment || ["Bodyweight", "Dumbbells"];
+
+        const pythonApiPayload = {
+            user: userDataForPythonApi,
+            availableDaysForNewPlan: availableDaysForNewPlan||5,
+            timePerSessionMinutes: timePerSessionMinutes||60,
+            availableEquipment: availableEquipment,
+            experienceLevel: experienceLevel,
+            lastWeekWorkout: lastWeekWorkoutData // This is the raw history from /get/last7days
+        };
+
+        console.log(`Calling Python API at ${PYTHON_API_URL} for user: ${userId}`);
+        let generatedPlanResponse;
+        try {
+            generatedPlanResponse = await axios.post(PYTHON_API_URL, pythonApiPayload,{
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+        } catch (pythonError) {
+            console.error('Error calling Python Flask API:', pythonError.response ? JSON.stringify(pythonError.response.data, null, 2) : pythonError.message);
+            return res.status(pythonError.response?.status || 500).json({
+                message: 'Failed to get workout plan from Python API.',
+                error: pythonError.response ? pythonError.response.data : pythonError.message
+            });
+        }
+
+        const planData = generatedPlanResponse.data; // This should be the { workout_schedule: [...] } object
+
+        
+        let is_valid_format = true;
+        const validation_errors = [];
+        const expected_days = pythonApiPayload.availableDaysForNewPlan || 5; // Use what was requested
+
+        if (!planData || typeof planData !== 'object' || !planData.workout_schedule || !Array.isArray(planData.workout_schedule)) {
+            is_valid_format = false;
+            validation_errors.push("Invalid top-level JSON structure: missing 'workout_schedule' array.");
+        } else if (planData.workout_schedule.length !== expected_days) {
+            is_valid_format = false;
+            validation_errors.push(`Plan does NOT contain ${expected_days} workout days. Received ${planData.workout_schedule.length} days.`);
+        } else {
+            for (const day_idx in planData.workout_schedule) {
+                const day_plan = planData.workout_schedule[day_idx];
+                const day_label = day_plan.date || `Day ${parseInt(day_idx) + 1}`;
+
+                if (!day_plan.date || typeof day_plan.date !== 'string') {
+                    is_valid_format = false; validation_errors.push(`Day ${day_label} missing or invalid 'date'.`);
+                } else {
+                    try { new Date(day_plan.date).toISOString().split('T')[0]; } // Basic check for YYYY-MM-DD like format
+                    catch (e) { is_valid_format = false; validation_errors.push(`Invalid date format for '${day_plan.date}' in ${day_label}.`);}
+                }
+
+                if (!day_plan.exercises || !Array.isArray(day_plan.exercises) || (expected_days > 0 && day_plan.exercises.length === 0)) {
+                    is_valid_format = false; validation_errors.push(`Day ${day_label} missing or empty 'exercises' array.`);
+                } else if (Array.isArray(day_plan.exercises)) {
+                    for (const ex_idx in day_plan.exercises) {
+                        const ex = day_plan.exercises[ex_idx];
+                        const ex_label = ex.name || `Exercise ${parseInt(ex_idx) + 1}`;
+                        if (!ex.name || typeof ex.name !== 'string' ||
+                            !ex.type || typeof ex.type !== 'string' ||
+                            !ex.duration || typeof ex.duration !== 'object' ||
+                            typeof ex.duration.minutes !== 'number' || typeof ex.duration.seconds !== 'number' ||
+                            (ex.sets !== null && typeof ex.sets !== 'number') ||      // sets can be null or number
+                            (ex.reps !== null && typeof ex.reps !== 'number') ||      // reps can be null or number
+                            (ex.weight !== null && typeof ex.weight !== 'number') ||  // weight can be null or number
+                            typeof ex.completed !== 'boolean') {
+                            is_valid_format = false;
+                            validation_errors.push(`Exercise ${ex_label} in ${day_label} has missing/invalid fields or types.`);
+                        }
+                    }
+                }
+            }
+        }
+
+        if (!is_valid_format) {
+            console.error(`LLM output failed structural validation for user ${userId}:`, validation_errors);
+            return res.status(422).json({ // Unprocessable Entity
+                message: 'Generated plan from AI service failed structural validation.',
+                errors: validation_errors,
+                raw_output: planData 
+            });
+        }
+
+        // If we reach here, the plan has the correct JSON structure.
+        // Proceed to create workouts with the exercise details as provided by LLM.
+        const workout_schedule = planData.workout_schedule;
+        console.log(`Validated ${workout_schedule.length} day(s) in the plan. Processing each day...`);
+        const createdWorkoutsInfo = [];
+
+        for (const dayPlan of workout_schedule) {
+            // **CRITICAL CHANGE**: We now send the exercise detail objects directly.
+            // Your /workout/create endpoint and Mongoose schema must be able to handle this.
+            const exercisesToCreate = dayPlan.exercises.map(ex => ({
+                name: ex.name,
+                type: ex.type,
+                duration: ex.duration, 
+                sets: ex.sets,       
+                reps: ex.reps,       
+                weight: ex.weight,     
+                completed: ex.completed // Should be false
+            }));
+
+            const workoutToCreatePayload = {
+                userId: userId,
+                date: dayPlan.date,       
+                exercises: exercisesToCreate 
+            };
+
+            try {
+                console.log(`Sending POST to ${WORKOUT_CREATE_URL} for date: ${dayPlan.date} with ${exercisesToCreate.length} exercises`);
+                const createResponse = await axios.post('http://localhost:5000/workout/create', workoutToCreatePayload);
+                console.log(`Workout for ${dayPlan.date} created successfully, ID: ${createResponse.data._id}`);
+                createdWorkoutsInfo.push({
+                    date: dayPlan.date,
+                    status: "created",
+                    workoutId: createResponse.data._id, // Assuming response contains the created workout's ID
+                    numExercises: exercisesToCreate.length
+                });
+            } catch (createError) {
+                console.error(`Failed to create workout for ${dayPlan.date}:`, createError.response ? JSON.stringify(createError.response.data, null, 2) : createError.message);
+                createdWorkoutsInfo.push({
+                    date: dayPlan.date,
+                    status: "failed_to_create_in_db",
+                    error: createError.response ? createError.response.data : createError.message,
+                    numExercisesAttempted: exercisesToCreate.length
+                });
+            }
+        }
+
+        res.status(201).json({
+            message: `Weekly plan generation processed. See summary for details.`,
+            userId: userId,
+            requestedDaysInPlan: workout_schedule.length,
+            creationSummary: createdWorkoutsInfo
+        });
+
+    } catch (error) {
+        console.error('Error in /generate/:userId controller:', error.message, error.stack);
+        res.status(500).json({ message: 'Internal server error in Node.js controller', error: error.message });
+    }
+
+
+})
+
 module.exports = { createWorkout, getWorkout, updateUserWorkout, deleteWorkout, updateExcercises, deleteExercise, deleteWorkoutHistory, updateExerciseDuration,getWorkoutsLast7Days,updateExerciseCompletedStatus,    addExerciseToWorkout,
     updateExerciseInWorkout,
-    removeExerciseFromWorkout, }
+    removeExerciseFromWorkout,generate_workout}
 
 
 

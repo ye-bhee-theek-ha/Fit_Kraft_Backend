@@ -303,6 +303,72 @@ const getMeals = asyncHandler(async(req,res)=>{
     res.status(200).json(allMeals);
 })
 
+const updateDieteryMealStatus = asyncHandler(async (req, res) => {
+    const { dieteryId, mealId } = req.params; // Get IDs from URL parameters
+    const { isCompleted } = req.body;         // Get the new status from request body
+
+    // --- Input Validation ---
+    if (typeof isCompleted !== 'boolean') {
+        return res.status(400).json({
+            success: false,
+            message: 'Invalid input: isCompleted must be a boolean (true or false).'
+        });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(dieteryId)) {
+         return res.status(400).json({ success: false, message: 'Invalid Dietery ID format.' });
+    }
+     if (!mongoose.Types.ObjectId.isValid(mealId)) {
+         return res.status(400).json({ success: false, message: 'Invalid Meal ID format.' });
+    }
+    // --- End Validation ---
+
+    try {
+        // Find the Dietery document by its ID (_id) and update the specific meal element
+        const updatedDietery = await Dietery.findOneAndUpdate(
+            {
+                _id: dieteryId,
+                // Crucially, ensure the meal we want to update *exists* in the array.
+                // We target the field holding the ObjectId, which is 'type' based on your schema.
+                'Meals.type': mealId
+            },
+            {
+                // Set the 'isCompleted' field of the matched array element
+                $set: { 'Meals.$[elem].isCompleted': isCompleted }
+            },
+            {
+                // arrayFilters identifies which element 'elem' corresponds to.
+                // We match the element ('elem') where its 'type' field (the ObjectId) equals mealId.
+                arrayFilters: [{ 'elem.type': mealId }],
+                new: true, // Return the updated document after the update is applied
+                runValidators: true // Optional: run schema validators if needed
+            }
+        );
+
+        // Check if the document was found and updated
+        if (!updatedDietery) {
+            // This could happen if dieteryId doesn't exist, or if mealId wasn't found
+            // within the Meals array of the found dietery document.
+            return res.status(404).json({
+                success: false,
+                message: 'Dietery plan not found, or the specified meal was not found within that plan.'
+            });
+        }
+
+        // Successfully updated
+        res.status(200).json({
+            success: true,
+            message: 'Meal status updated successfully.',
+            data: updatedDietery // Return the entire updated Dietery document
+        });
+
+    } catch (error) {
+        console.error("Error updating meal status:", error);
+        // Handle potential server errors (DB connection, etc.)
+        res.status(500).json({ success: false, message: 'Server error updating meal status.' });
+    }
+});
 
 
-module.exports = {createMeal,getDietary,getMeals,updateDieteryMeals,createDietery}    
+
+module.exports = {createMeal,getDietary,getMeals,updateDieteryMeals,createDietery,updateDieteryMealStatus}    
