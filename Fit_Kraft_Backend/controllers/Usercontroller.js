@@ -89,7 +89,7 @@ const CreateUser = asyncHandler(async (req, res) => {
 
 const getUserBadges = async (req, res) => {
     try {
-      const userId = req.params.userId;
+      const userid = req.params.userId;
   
       // Find the user by their ID and populate the 'badges' field
       const user = await User.findById(userId).populate('badges');
