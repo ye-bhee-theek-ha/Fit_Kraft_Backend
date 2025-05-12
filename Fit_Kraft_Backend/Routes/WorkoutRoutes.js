@@ -10,8 +10,8 @@ router.put("/update/:id", calculateWorkoutMetrics, updateUserWorkout)//useless
 router.put("/update/exercises/:id/:workoutid", calculateWorkoutMetrics, updateExcercises)//this adds exercise in workout array 
 router.get("/get/:userId",getWorkout)
 router.get('/get/last7days/:userId',getWorkoutsLast7Days)//for last 7 days
-router.put('/update/duration/:userid/:workoutId/:exerciseId',updateExerciseDetails)   //for update exercise duration in workout it also autocalculates total duration 
-router.delete("/delete/:id",deleteWorkout)  
+router.put('/update/duration/:userid/:workoutId/:exerciseId',updateExerciseDetails)   //for update exeercise with all attriburtes in workout 
+
 router.put('/update/completestatus/:exerciseId',updateExerciseCompletedStatus) //for updating completed status of exercise
 router.post('/generate/:userId',generate_workout)
 
