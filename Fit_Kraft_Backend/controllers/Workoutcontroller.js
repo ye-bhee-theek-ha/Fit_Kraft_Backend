@@ -134,88 +134,110 @@ const getWorkoutHistory = asyncHandler(async (req, res) => {//gets workout for d
 
 const updateExcercises = asyncHandler(async (req, res) => {
     try {
-      const { id: workoutId } = req.params; // Renamed 'id' to 'workoutId' for clarity
-      const { exercises, userId } = req.body;
-  
-      if (!userId || !exercises || !Array.isArray(exercises)) {
-        return res.status(400).json({
-          message: "UserId and exercises array are required"
-        });
-      }
-  
-      const exercisePromises = exercises.map(async (exercise) => {
-        let storedExercise;
-  
-        // Check for user-specific stored exercise
-        storedExercise = await Stored_Exercises.findOne({
-          User_Created_ID: userId,
-          name: { $regex: new RegExp(`^${exercise.name}$`, 'i') }
-        });
-  
-        // Check for global stored exercise if not found for user
-        if (!storedExercise) {
-          storedExercise = await Stored_Exercises.findOne({
-            User_Created_ID: { $exists: false },
-            name: { $regex: new RegExp(`^${exercise.name}$`, 'i') }
-          });
-  
-          // Create user-specific stored exercise from global if found
-          if (storedExercise) {
-            storedExercise = await Stored_Exercises.create({
-              name: storedExercise.name,
-              description: storedExercise.description,
-              gifUrl: storedExercise.gifUrl,
-              bodyPart: storedExercise.bodyPart,
-              equipment: storedExercise.equipment,
-              User_Created_ID: userId
+        const { id: workoutId } = req.params; // Renamed 'id' to 'workoutId' for clarity
+        const { exercises, userId } = req.body;
+
+        if (!userId || !exercises || !Array.isArray(exercises)) {
+            return res.status(400).json({
+                message: "UserId and exercises array are required"
             });
-          } else {
-            // Create new stored exercise if not found at all
-            storedExercise = await Stored_Exercises.create({
-              name: exercise.name,
-              type: exercise.type,
-              User_Created_ID: userId,
-              description: exercise.description || '',
-              bodyPart: exercise.bodyPart || '',
-              equipment: exercise.equipment || ''
-            });
-          }
         }
-  
-        // Create new exercise instance for the workout
-        const newExercise = await Exercise.create({
-          name: exercise.name,
-          type: exercise.type,
-          duration: exercise.duration,
-          sets: exercise.sets,
-          reps: exercise.reps,
-          weight: exercise.weight
+
+        const exercisePromises = exercises.map(async (exercise) => {
+            let storedExercise;
+
+            // Check for user-specific stored exercise
+            storedExercise = await Stored_Exercises.findOne({
+                User_Created_ID: userId,
+                name: { $regex: new RegExp(`^${exercise.name}$`, 'i') }
+            });
+
+            // Check for global stored exercise if not found for user
+            if (!storedExercise) {
+                storedExercise = await Stored_Exercises.findOne({
+                    User_Created_ID: { $exists: false },
+                    name: { $regex: new RegExp(`^${exercise.name}$`, 'i') }
+                });
+
+                // Create user-specific stored exercise from global if found
+                if (storedExercise) {
+                    // Note: This creates a new user-specific copy if a global one is found
+                    // and no user-specific one existed.
+                    storedExercise = await Stored_Exercises.create({
+                        name: storedExercise.name,
+                        description: storedExercise.description,
+                        gifUrl: storedExercise.gifUrl,
+                        bodyPart: storedExercise.bodyPart,
+                        equipment: storedExercise.equipment,
+                        User_Created_ID: userId
+                        // type might be missing here if it's on global and needs to be copied
+                    });
+                } else {
+                    // Create new stored exercise if not found at all
+                    storedExercise = await Stored_Exercises.create({
+                        name: exercise.name,
+                        type: exercise.type, // Ensure type is included when creating a new stored exercise
+                        User_Created_ID: userId,
+                        description: exercise.description || '',
+                        gifUrl: exercise.gifUrl || '', // Added gifUrl if it's part of new exercise input
+                        bodyPart: exercise.bodyPart || '',
+                        equipment: exercise.equipment || ''
+                    });
+                }
+            }
+            // If storedExercise was found (either user-specific or a new one was created based on global/new input)
+            // its ID isn't directly used in the 'Exercise' instance for the workout,
+            // but the logic ensures the 'Stored_Exercises' collection is up-to-date.
+
+            // Create new exercise instance for the workout
+            const newExercise = await Exercise.create({
+                name: exercise.name, // Or storedExercise.name if you want to ensure consistency
+                type: exercise.type,   // Or storedExercise.type
+                duration: exercise.duration,
+                sets: exercise.sets,
+                reps: exercise.reps,
+                weight: exercise.weight
+                // You might want to link newExercise to storedExercise._id if that's part of your data model
+                // e.g., storedExerciseId: storedExercise._id
+            });
+
+            return newExercise._id;
         });
-  
-        return newExercise._id;
-      });
-  
-      const exerciseIds = await Promise.all(exercisePromises);
-  
-      // Update workout with new exercise IDs
-      const workout = await Workout.findById(workoutId);
-      if (!workout) {
-        return res.status(404).json({ message: "Workout not found" });
-      }
-  
-      workout.exercises = exerciseIds;
-      await workout.save();
-  
-      const updatedWorkout = await workout.populate('exercises');
-      res.status(200).json({
-        message: "Exercises updated successfully",
-        workout: updatedWorkout
-      });
+
+        const newExerciseIds = await Promise.all(exercisePromises);
+
+        // Find the workout
+        const workout = await Workout.findById(workoutId);
+        if (!workout) {
+            return res.status(404).json({ message: "Workout not found" });
+        }
+
+        // --- MODIFICATION START ---
+        // Ensure workout.exercises is an array (it usually is if defined in schema)
+        if (!Array.isArray(workout.exercises)) {
+            workout.exercises = [];
+        }
+
+        // Append new exercise IDs to the existing list instead of replacing
+        workout.exercises.push(...newExerciseIds);
+        // Alternatively, you could use:
+        // workout.exercises = workout.exercises.concat(newExerciseIds);
+        // --- MODIFICATION END ---
+
+        await workout.save();
+
+        const updatedWorkout = await workout.populate('exercises');
+        res.status(200).json({
+            message: "Exercises updated successfully (appended to existing)",
+            workout: updatedWorkout
+        });
     } catch (error) {
-      console.error('Error in updateExercises:', error);
-      res.status(500).json({ message: "Error updating exercises", error: error.message });
+        console.error('Error in updateExercises:', error);
+        res.status(500).json({ message: "Error updating exercises", error: error.message });
     }
-  });
+});
+
+
 
 const updateUserWorkout = asyncHandler(async (req, res) => {
     const { id } = req.params
