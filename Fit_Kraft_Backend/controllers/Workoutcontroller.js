@@ -246,67 +246,141 @@ const updateUserWorkout = asyncHandler(async (req, res) => {
     res.status(200).json({ message: "Workout updated successfully", workout })
 })
 
-const updateExerciseDuration = asyncHandler(async (req, res) => {
+
+const updateExerciseDetails = asyncHandler(async (req, res) => {
     const { userid, workoutId, exerciseId } = req.params;
-    const { minutes = 0, seconds = 0 } = req.body;
-    console.log(req.params)
+    const {
+        name,
+        type,
+        duration, // Expected format: { minutes: number, seconds: number }
+        minutes,  // Kept for backward compatibility if duration object is not sent
+        seconds,  // Ke_pt for backward compatibility
+        sets,
+        reps,
+        weight,
+        completed
+    } = req.body;
+
+    // console.log('Request Params:', req.params);
+    // console.log('Request Body:', req.body);
+
     try {
-        const workout = await Workout.findOne({ _id: workoutId, userId:userid });
+        // 1. Find the workout and verify ownership and existence
+        const workout = await Workout.findOne({ _id: workoutId, userId: userid });
 
         if (!workout) {
             res.status(404);
-            throw new Error('Workout not found');
+            throw new Error('Workout not found or does not belong to the user.');
         }
 
-        const exerciseToUpdateIndex = workout.exercises.findIndex(
-            (exercise) => exercise.toString() === exerciseId
+        // 2. Check if the exercise is part of this workout
+        //    (The original code uses findIndex which is fine for verification,
+        //     but we fetch the Exercise document directly by exerciseId anyway)
+        const exerciseExistsInWorkout = workout.exercises.find(
+            (exRef) => exRef.toString() === exerciseId
         );
 
-        if (exerciseToUpdateIndex === -1) {
+        if (!exerciseExistsInWorkout) {
             res.status(404);
-            throw new Error('Exercise not found in this workout');
+            throw new Error('Exercise not found in this workout.');
         }
 
-        // Find the actual Exercise document to update its duration
-        const exercise = await Exercise.findById(exerciseId);
-        if (!exercise) {
+        // 3. Find the actual Exercise document
+        const exerciseToUpdate = await Exercise.findById(exerciseId);
+        if (!exerciseToUpdate) {
             res.status(404);
-            throw new Error('Exercise document not found');
+            throw new Error('Exercise document not found in the database.');
         }
 
-        exercise.duration.minutes = minutes;
-        exercise.duration.seconds = seconds;
-        await exercise.save();
+        // 4. Update attributes if they are provided in the request body
+        if (name !== undefined) exerciseToUpdate.name = name;
+        if (type !== undefined) exerciseToUpdate.type = type;
 
-        // --- Embedded Middleware Logic ---
-        let totalMinutes = 0;
-        let totalSeconds = 0;
+        // Ensure exercise.duration object exists (it should due to schema defaults, but good practice)
+        if (!exerciseToUpdate.duration) {
+            exerciseToUpdate.duration = { minutes: 0, seconds: 0 };
+        }
 
-        // Populate exercises to access their duration
+        // Handle duration update (prioritize 'duration' object, then individual 'minutes'/'seconds')
+        if (duration && typeof duration === 'object') {
+            if (duration.minutes !== undefined) {
+                exerciseToUpdate.duration.minutes = parseInt(duration.minutes, 10);
+            }
+            if (duration.seconds !== undefined) {
+                exerciseToUpdate.duration.seconds = parseInt(duration.seconds, 10);
+            }
+        } else { // Fallback for top-level minutes/seconds if duration object isn't provided
+            if (minutes !== undefined) {
+                exerciseToUpdate.duration.minutes = parseInt(minutes, 10);
+            }
+            if (seconds !== undefined) {
+                exerciseToUpdate.duration.seconds = parseInt(seconds, 10);
+            }
+        }
+
+        // Normalize duration: if parseInt results in NaN, default to 0 or its current value
+        exerciseToUpdate.duration.minutes = isNaN(exerciseToUpdate.duration.minutes) ? 0 : exerciseToUpdate.duration.minutes;
+        exerciseToUpdate.duration.seconds = isNaN(exerciseToUpdate.duration.seconds) ? 0 : exerciseToUpdate.duration.seconds;
+
+
+        // Update other numeric and boolean fields
+        // Mongoose will attempt type coercion (e.g., "5" to 5, "true" to true)
+        if (sets !== undefined) exerciseToUpdate.sets = sets;
+        if (reps !== undefined) exerciseToUpdate.reps = reps;
+        if (weight !== undefined) exerciseToUpdate.weight = weight;
+        if (completed !== undefined) exerciseToUpdate.completed = completed;
+
+        await exerciseToUpdate.save();
+
+        // 5. Recalculate Workout Total Duration (same as your "Embedded Middleware Logic")
+        let totalWorkoutMinutes = 0;
+        let totalWorkoutSeconds = 0;
+
+        // Re-fetch the workout and populate exercises to get updated durations
         const populatedWorkout = await Workout.findById(workoutId).populate('exercises');
 
         if (populatedWorkout && populatedWorkout.exercises) {
             for (const ex of populatedWorkout.exercises) {
-                totalMinutes += ex.duration.minutes || 0;
-                totalSeconds += ex.duration.seconds || 0;
+                // Ensure ex.duration exists and its properties are numbers
+                if (ex.duration) {
+                    totalWorkoutMinutes += Number(ex.duration.minutes) || 0;
+                    totalWorkoutSeconds += Number(ex.duration.seconds) || 0;
+                }
             }
 
-            populatedWorkout.duration.minutes = Math.floor(totalMinutes + totalSeconds / 60);
-            populatedWorkout.duration.seconds = totalSeconds % 60;
+            // Ensure populatedWorkout.duration object exists before assignment
+            if (!populatedWorkout.duration) {
+                populatedWorkout.duration = { minutes: 0, seconds: 0 };
+            }
+
+            populatedWorkout.duration.minutes = Math.floor(totalWorkoutMinutes + totalWorkoutSeconds / 60);
+            populatedWorkout.duration.seconds = totalWorkoutSeconds % 60;
             await populatedWorkout.save(); // Save the workout with updated total duration
+
             res.status(200).json(populatedWorkout);
         } else {
-            // Handle the case where populating exercises failed or workout is gone
-            res.status(500).json({ message: 'Error updating workout duration' });
+            // This case might occur if the workout was deleted by another process,
+            // or if exercises array is unexpectedly empty after population.
+            // Sending the updated exercise might be an alternative if workout update fails.
+             console.error('Error: Populated workout or its exercises not found for duration update.');
+            res.status(200).json({
+                message: 'Exercise updated, but failed to recalculate workout total duration as workout data was inconsistent.',
+                updatedExercise: exerciseToUpdate // Optionally send back the updated exercise
+            });
         }
-        // --- End of Embedded Middleware Logic ---
 
     } catch (error) {
-        console.error('Error updating exercise duration:', error);
-        res.status(500).json({ message: 'Failed to update exercise duration', error: error.message });
+        console.error('Error updating exercise details:', error);
+        // If res.status() was called before throw, that status might not be on error object.
+        // asyncHandler should pass error to a central error handler.
+        // If handling here, ensure status code reflects the error.
+        if (!res.headersSent) {
+            const statusCode = res.statusCode >= 400 ? res.statusCode : 500; // Use status if already set by preceding res.status()
+            res.status(statusCode).json({ message: error.message || 'Failed to update exercise details' });
+        }
+        // If headers were sent, the error is logged, but response cannot be changed.
     }
 });
-
 
 
 const getWorkoutsLast7Days = asyncHandler(async (req, res) => {
@@ -1020,7 +1094,7 @@ const generate_workout=asyncHandler(async (req, res) => {
 
 })
 
-module.exports = { createWorkout, getWorkout, updateUserWorkout, deleteWorkout, updateExcercises, deleteExercise, deleteWorkoutHistory, updateExerciseDuration,getWorkoutsLast7Days,updateExerciseCompletedStatus,    addExerciseToWorkout,
+module.exports = { createWorkout, getWorkout, updateUserWorkout, deleteWorkout, updateExcercises, deleteExercise, deleteWorkoutHistory, updateExerciseDetails,getWorkoutsLast7Days,updateExerciseCompletedStatus,    addExerciseToWorkout,
     updateExerciseInWorkout,
     removeExerciseFromWorkout,generate_workout}
 
