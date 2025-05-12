@@ -369,6 +369,116 @@ const updateDieteryMealStatus = asyncHandler(async (req, res) => {
     }
 });
 
+const updateMealInDietaryPlan = asyncHandler(async (req, res) => {
+    const { userId, dietaryId, mealId } = req.params;
+    const updates = req.body;
+
+    // 1. Find the dietary plan and verify ownership
+    const dietaryPlan = await Dietary.findOne({ _id: dietaryId, UserId: userId });
+
+    if (!dietaryPlan) {
+        res.status(404);
+        throw new Error('Dietary plan not found or does not belong to the user.');
+    }
+
+    // 2. Find the meal reference within the dietary plan's Meals array
+    const mealRefIndex = dietaryPlan.Meals.findIndex(
+        (mealEntry) => mealEntry.type.toString() === mealId
+    );
+
+    if (mealRefIndex === -1) {
+        res.status(404);
+        throw new Error('Meal not found in this specific dietary plan.');
+    }
+
+    // 3. Update 'isCompleted' status in the dietary plan if provided in the request body
+    let dietaryPlanDirectlyModified = false;
+    if (updates.isCompleted !== undefined) {
+        dietaryPlan.Meals[mealRefIndex].isCompleted = Boolean(updates.isCompleted);
+        dietaryPlanDirectlyModified = true;
+    }
+
+    // 4. Find the actual Meal document to update its attributes
+    const mealToUpdate = await Meal.findById(mealId);
+    if (!mealToUpdate) {
+        // This implies a data inconsistency if the mealId was in the dietaryPlan but the document is gone.
+        res.status(404);
+        throw new Error('Meal document not found in the database.');
+    }
+
+    // 5. Update Meal document attributes based on MealSchema
+    const mealSchemaFields = [
+        'Name', 'Calories', 'Protein', 'Carbs', 'Fats',
+        'Ingredients', 'Instructions', 'Image', 'Category', 'UserCreated_ID'
+    ];
+    let mealDocumentModified = false;
+
+    for (const key of mealSchemaFields) {
+        if (updates[key] !== undefined) {
+            // For nutritional fields, parse as float. For others, assign directly.
+            if (['Calories', 'Protein', 'Carbs', 'Fats'].includes(key)) {
+                const numericValue = parseFloat(updates[key]);
+                if (!isNaN(numericValue)) { // Assign only if it's a valid number
+                    mealToUpdate[key] = numericValue;
+                } else {
+                    // Optionally, you could throw a 400 error for bad input format
+                    console.warn(`Invalid number format for meal attribute ${key}: ${updates[key]}. Field not updated.`);
+                    // To make the request fail for bad number format:
+                    // res.status(400);
+                    // throw new Error(`Invalid number format for meal attribute ${key}: ${updates[key]}`);
+                    continue; // Skip updating this field if format is bad
+                }
+            } else {
+                mealToUpdate[key] = updates[key]; // For Name, Ingredients, Instructions, etc.
+            }
+            mealDocumentModified = true;
+        }
+    }
+
+    if (mealDocumentModified) {
+        await mealToUpdate.save();
+    }
+
+    // 6. Recalculate nutritional totals for the Dietary Plan
+    // This is crucial if any meal's nutritional values were changed.
+    let totalCalories = 0;
+    let totalProtein = 0;
+    let totalCarbs = 0;
+    let totalFats = 0;
+
+    const mealObjectIdsInDietary = dietaryPlan.Meals.map(m => m.type);
+    // Fetch the latest versions of all meals in the dietary plan
+    const actualMealsInDietary = await Meal.find({ '_id': { $in: mealObjectIdsInDietary } });
+
+    for (const mealDoc of actualMealsInDietary) {
+        totalCalories += mealDoc.Calories || 0;
+        totalProtein += mealDoc.Protein || 0;
+        totalCarbs += mealDoc.Carbs || 0;
+        totalFats += mealDoc.Fats || 0;
+    }
+
+    // Update totals on the dietary plan
+    dietaryPlan.TotalCalories = totalCalories;
+    dietaryPlan.TotalProtein = totalProtein;
+    dietaryPlan.TotalCarbs = totalCarbs;
+    dietaryPlan.TotalFats = totalFats;
+
+    // 7. Save the dietary plan (it's always modified due to total recalculations, or potentially 'isCompleted' status)
+    await dietaryPlan.save();
 
 
-module.exports = {createMeal,getDietary,getMeals,updateDieteryMeals,createDietery,updateDieteryMealStatus}    
+    // 8. Respond with the updated and populated dietary plan
+    //    Populating 'Meals.type' will replace the ObjectId with the actual Meal document details.
+    const populatedDietaryPlan = await Dietary.findById(dietaryPlan._id)
+        .populate({
+            path: 'Meals.type', // Path to the field to populate within the Meals array objects
+            model: 'Meal'       // Explicitly state the model for the reference
+        });
+
+    res.status(200).json({
+        message: 'Meal updated successfully and dietary plan totals recalculated.',
+        dietaryPlan: populatedDietaryPlan
+    });
+});
+
+module.exports = {createMeal,getDietary,getMeals,updateDieteryMeals,createDietery,updateDieteryMealStatus,updateMealInDietaryPlan}    
