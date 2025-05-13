@@ -2,6 +2,7 @@ const express = require('express')
 const asyncHandler = require('express-async-handler')
 const Meal = require('../Models/MealModel')
 const Dietary = require('../Models/DieteryModel')
+const mongoose = require('mongoose')
 
 const createMeal = asyncHandler(async(req,res)=>{
     const {name,calories,protein,carbs,fats,ingredients,instructions,image,category} = req.body
@@ -370,115 +371,116 @@ const updateDieteryMealStatus = asyncHandler(async (req, res) => {
 });
 
 const updateMealInDietaryPlan = asyncHandler(async (req, res) => {
-    const { userId, dietaryId, mealId } = req.params;
-    const updates = req.body;
+    const { mealId } = req.params;
+    const updateData = req.body;
 
-    // 1. Find the dietary plan and verify ownership
-    const dietaryPlan = await Dietary.findOne({ _id: dietaryId, UserId: userId });
-
-    if (!dietaryPlan) {
-        res.status(404);
-        throw new Error('Dietary plan not found or does not belong to the user.');
-    }
-
-    // 2. Find the meal reference within the dietary plan's Meals array
-    const mealRefIndex = dietaryPlan.Meals.findIndex(
-        (mealEntry) => mealEntry.type.toString() === mealId
-    );
-
-    if (mealRefIndex === -1) {
-        res.status(404);
-        throw new Error('Meal not found in this specific dietary plan.');
-    }
-
-    // 3. Update 'isCompleted' status in the dietary plan if provided in the request body
-    let dietaryPlanDirectlyModified = false;
-    if (updates.isCompleted !== undefined) {
-        dietaryPlan.Meals[mealRefIndex].isCompleted = Boolean(updates.isCompleted);
-        dietaryPlanDirectlyModified = true;
-    }
-
-    // 4. Find the actual Meal document to update its attributes
-    const mealToUpdate = await Meal.findById(mealId);
-    if (!mealToUpdate) {
-        // This implies a data inconsistency if the mealId was in the dietaryPlan but the document is gone.
-        res.status(404);
-        throw new Error('Meal document not found in the database.');
-    }
-
-    // 5. Update Meal document attributes based on MealSchema
-    const mealSchemaFields = [
-        'Name', 'Calories', 'Protein', 'Carbs', 'Fats',
-        'Ingredients', 'Instructions', 'Image', 'Category', 'UserCreated_ID'
-    ];
-    let mealDocumentModified = false;
-
-    for (const key of mealSchemaFields) {
-        if (updates[key] !== undefined) {
-            // For nutritional fields, parse as float. For others, assign directly.
-            if (['Calories', 'Protein', 'Carbs', 'Fats'].includes(key)) {
-                const numericValue = parseFloat(updates[key]);
-                if (!isNaN(numericValue)) { // Assign only if it's a valid number
-                    mealToUpdate[key] = numericValue;
-                } else {
-                    // Optionally, you could throw a 400 error for bad input format
-                    console.warn(`Invalid number format for meal attribute ${key}: ${updates[key]}. Field not updated.`);
-                    // To make the request fail for bad number format:
-                    // res.status(400);
-                    // throw new Error(`Invalid number format for meal attribute ${key}: ${updates[key]}`);
-                    continue; // Skip updating this field if format is bad
-                }
-            } else {
-                mealToUpdate[key] = updates[key]; // For Name, Ingredients, Instructions, etc.
-            }
-            mealDocumentModified = true;
+    try {
+        // Validate mealId
+        if (!mongoose.Types.ObjectId.isValid(mealId)) {
+            return res.status(400).json({ message: 'Invalid meal ID' });
         }
-    }
 
-    if (mealDocumentModified) {
-        await mealToUpdate.save();
-    }
+        // Update the meal
+        const updatedMeal = await Meal.findByIdAndUpdate(
+            mealId,
+            { $set: updateData },
+            { new: true }
+        );
 
-    // 6. Recalculate nutritional totals for the Dietary Plan
-    // This is crucial if any meal's nutritional values were changed.
-    let totalCalories = 0;
-    let totalProtein = 0;
-    let totalCarbs = 0;
-    let totalFats = 0;
+        if (!updatedMeal) {
+            return res.status(404).json({ message: 'Meal not found' });
+        }
 
-    const mealObjectIdsInDietary = dietaryPlan.Meals.map(m => m.type);
-    // Fetch the latest versions of all meals in the dietary plan
-    const actualMealsInDietary = await Meal.find({ '_id': { $in: mealObjectIdsInDietary } });
-
-    for (const mealDoc of actualMealsInDietary) {
-        totalCalories += mealDoc.Calories || 0;
-        totalProtein += mealDoc.Protein || 0;
-        totalCarbs += mealDoc.Carbs || 0;
-        totalFats += mealDoc.Fats || 0;
-    }
-
-    // Update totals on the dietary plan
-    dietaryPlan.TotalCalories = totalCalories;
-    dietaryPlan.TotalProtein = totalProtein;
-    dietaryPlan.TotalCarbs = totalCarbs;
-    dietaryPlan.TotalFats = totalFats;
-
-    // 7. Save the dietary plan (it's always modified due to total recalculations, or potentially 'isCompleted' status)
-    await dietaryPlan.save();
-
-
-    // 8. Respond with the updated and populated dietary plan
-    //    Populating 'Meals.type' will replace the ObjectId with the actual Meal document details.
-    const populatedDietaryPlan = await Dietary.findById(dietaryPlan._id)
-        .populate({
-            path: 'Meals.type', // Path to the field to populate within the Meals array objects
-            model: 'Meal'       // Explicitly state the model for the reference
+        res.status(200).json({
+            message: 'Meal updated successfully',
+            meal: updatedMeal
         });
 
-    res.status(200).json({
-        message: 'Meal updated successfully and dietary plan totals recalculated.',
-        dietaryPlan: populatedDietaryPlan
-    });
+    } catch (err) {
+        console.error("Error updating meal:", err);
+        res.status(500).json({ message: 'Server error', error: err.message });
+    }
 });
 
-module.exports = {createMeal,getDietary,getMeals,updateDieteryMeals,createDietery,updateDieteryMealStatus,updateMealInDietaryPlan}    
+
+const UpdateDietery = asyncHandler(async(req,res)=>{
+
+    const { dieteryId } = req.params;
+  const updatedData = req.body;
+
+  try {
+    // Validate Dietery ID
+    if (!mongoose.Types.ObjectId.isValid(dieteryId)) {
+      return res.status(400).json({ message: 'Invalid Dietery ID' });
+    }
+
+    // Save new Meal objects to the Meal collection if not already saved
+    const savedMeals = [];
+
+    for (let meal of updatedData.Meals) {
+      // Check if the meal already exists by name (case insensitive)
+      let existingMeal = await Meal.findOne({ Name: meal.Name });
+
+      if (!existingMeal) {
+        // If the meal doesn't exist, create a new one and save it
+        const newMeal = new Meal({
+          Name: meal.Name,
+          Calories: meal.Calories,
+          Protein: meal.Protein,
+          Carbs: meal.Carbs,
+          Fats: meal.Fats,
+          Ingredients: meal.Ingredients,
+          Instructions: meal.Instructions,
+          Image: meal.Image,
+          Category: meal.Category,
+          UserCreated_ID: meal.UserCreated_ID,
+          completed: meal.completed
+        });
+
+        existingMeal = await newMeal.save(); // Save the new meal
+      }
+
+      // Push the existing or newly created meal reference
+      savedMeals.push(existingMeal);
+    }
+
+    // Now update the Dietery with the full meals array
+    updatedData.Meals = savedMeals.map(meal => ({
+      _id: meal._id,
+      Name: meal.Name,
+      Calories: meal.Calories,
+      Protein: meal.Protein,
+      Carbs: meal.Carbs,
+      Fats: meal.Fats,
+      Ingredients: meal.Ingredients,
+      Instructions: meal.Instructions,
+      Image: meal.Image,
+      Category: meal.Category,
+      UserCreated_ID: meal.UserCreated_ID,
+      completed: meal.completed
+    }));
+
+    // Update the Dietery document
+    const updatedDietery = await Dietary.findByIdAndUpdate(
+      dieteryId,
+      { $set: updatedData },
+      { new: true }
+    );
+
+    if (!updatedDietery) {
+      return res.status(404).json({ message: 'Dietery not found' });
+    }
+
+    res.status(200).json({
+      message: 'Dietery updated successfully',
+      dietery: updatedDietery
+    });
+
+  } catch (err) {
+    console.error('Error updating dietery:', err);
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+});
+
+
+module.exports = {createMeal,getDietary,getMeals,updateDieteryMeals,createDietery,updateDieteryMealStatus,updateMealInDietaryPlan,UpdateDietery}    

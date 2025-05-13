@@ -15,6 +15,7 @@ const MealSchema = new mongoose.Schema({
         type: String,
         default: false
     },
+    
 })
 
 
