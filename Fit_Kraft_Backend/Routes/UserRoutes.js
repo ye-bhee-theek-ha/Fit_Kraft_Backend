@@ -1,5 +1,7 @@
 const express = require("express");
 const {getUser,CreateUser,DeleteUser,UpdateUser,loginUser,checkOnboardingStatus, Onboarding,getUserBadges,createBadge,assignBadgeToUser}=require('../controllers/Usercontroller')
+
+const {CreateNotification,GetNotification,DeleteNotificationById}=require('../controllers/NotificatoinController')
 const calculateMetrics = require('../middleware/calculateMetrics');
 const { protect } = require("../middleware/authMiddleware");
 const router = express.Router();
@@ -14,6 +16,11 @@ router.get('/onboarding-status', protect, checkOnboardingStatus);
 router.get('/getbadges/:userid',getUserBadges)
 router.post('/createbadge',createBadge)
 router.put('/updateuserbadges/:userid/:badgeid',assignBadgeToUser)
+router.get('/GetNotification/user/:userId',GetNotification)
+router.post('/CreateNotification',CreateNotification)
+router.delete('/DeleteNotification/Notification/:notificationId',DeleteNotificationById)
+
+
 
 module.exports=router  
 

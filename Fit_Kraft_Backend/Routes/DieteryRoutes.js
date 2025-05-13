@@ -12,7 +12,7 @@ router.get("/getMeals/:name/:userId", getMeals);
 router.put("/update/:userid", calculateMealTotals, updateDieteryMeals);//This adds meal to exsisting meal array
 router.post("/createMeal", createMeal);
 router.put('/update/meal/:mealId',updateMealInDietaryPlan)//changes meals ewvery attribute
-router.put('/updatestatus/dietery/:dieteryid/meal/:mealid',updateDieteryMealStatus)
+router.put('/updatestatus/dietery/:dieteryid/meal/:mealid',updateDieteryMealStatus)//to update meals status
 router.put('/updatedietery/dietery/:dieteryId/',UpdateDietery)//for updating dietery after generating from Meal plan generator
 
 
