@@ -1,7 +1,7 @@
 
 const asyncHandler=require('express-async-handler')
 const MentalWellness=require('../Models/MentalWellnessModel')
-
+const Playlist = require('../Models/PlaylistModel')
 
 
 const getMusicWellnessItems = asyncHandler(async (req, res) => {
@@ -75,9 +75,6 @@ const getSleepWellnessItems = asyncHandler(async (req, res) => {
 
 
 
-
-
-
 const getRelaxingVideosItems = asyncHandler(async (req, res) => {
 
     // Define the fields you want to retrieve for Relaxing Video items
@@ -100,6 +97,109 @@ const getRelaxingVideosItems = asyncHandler(async (req, res) => {
 
 });
 
+
+
+const createPlaylist = async (req, res) => {
+    try {
+      // Destructure name and musicItems from the request body
+      const { name, musicItems } = req.body;
+  
+      // --- Basic Validation ---
+      // Check if the playlist name is provided
+      if (!name || typeof name !== 'string' || name.trim() === '') {
+        return res.status(400).json({ message: 'Playlist name is required and must be a non-empty string.' });
+      }
+  
+      // musicItems is optional on creation, or can be an empty array.
+      // If musicItems are provided, ensure it's an array.
+      if (musicItems && !Array.isArray(musicItems)) {
+        return res.status(400).json({ message: 'If provided, musicItems must be an array.' });
+      }
+  
+      // Optional: Further validation for each music item if provided
+      if (musicItems && musicItems.length > 0) {
+        for (const item of musicItems) {
+          if (!item.title || !item.artist || !item.audioUrl || item.duration === undefined) {
+            return res.status(400).json({
+              message: 'Each music item must include title, artist, audioUrl, and duration.'
+            });
+          }
+          if (typeof item.duration !== 'number' || item.duration < 0) {
+              return res.status(400).json({ message: 'Music item duration must be a non-negative number.' });
+          }
+        }
+      }
+  
+      // Create a new playlist instance
+      // The 'musicItems' array will be validated by the MusicItemSchema if items are present.
+      const newPlaylist = new Playlist({
+        name: name.trim(),
+        musicItems: musicItems || [], // Default to empty array if not provided
+        // If you have a user associated with playlists:
+        // user: req.user.id, // Assuming req.user.id contains the logged-in user's ID
+      });
+  
+      // Save the new playlist to the database
+      const savedPlaylist = await newPlaylist.save();
+  
+      // Send a 201 Created response with the newly created playlist
+      res.status(201).json(savedPlaylist);
+  
+    } catch (error) {
+      // Log the error for debugging
+      console.error('Error creating playlist:', error);
+  
+      // Handle Mongoose validation errors (e.g., unique name constraint if playlist name already exists)
+      if (error.name === 'ValidationError') {
+        return res.status(400).json({ message: 'Validation Error', errors: error.errors });
+      }
+      // Handle duplicate key error for unique playlist name
+      if (error.code === 11000 && error.keyPattern && error.keyPattern.name) {
+          return res.status(409).json({ message: `Playlist name '${error.keyValue.name}' already exists.` });
+      }
+  
+  
+      // Send a generic server error message
+      res.status(500).json({ message: 'Server error. Could not create playlist.' });
+    }
+  };
+
+
+
+  const getPlaylistByName = async (req, res) => {
+    try {
+      // Extract playlist name from request parameters
+      // URL encoding (e.g., for names with spaces like "My%20Awesome%20Mix") is handled by Express
+      const playlistName = req.params.name;
+  
+      if (!playlistName || typeof playlistName !== 'string' || playlistName.trim() === '') {
+          return res.status(400).json({ message: 'Playlist name parameter is required.' });
+      }
+  
+      // Find the playlist by its name
+      // Using findOne as playlist names are ideally unique (or you might get the first match)
+      const playlist = await Playlist.findOne({ name: playlistName.trim() });
+      // If you want to populate user details (if you have a user field in PlaylistSchema):
+      // const playlist = await Playlist.findOne({ name: playlistName.trim() }).populate('user', 'name email');
+  
+  
+      // If no playlist is found with that name
+      if (!playlist) {
+        return res.status(404).json({ message: `Playlist with name '${playlistName}' not found.` });
+      }
+  
+      // Send the playlist back in the response
+      res.status(200).json(playlist);
+  
+    } catch (error) {
+      // Log the error for debugging purposes
+      console.error('Error fetching playlist by name:', error);
+  
+      // Send a generic error message to the client
+      res.status(500).json({ message: 'Server error. Could not retrieve playlist.' });
+    }
+  };
+
 module.exports = {
-    getMusicWellnessItems,getYogaWellnessItems,getSleepWellnessItems,getRelaxingVideosItems
+    getMusicWellnessItems,getYogaWellnessItems,getSleepWellnessItems,getRelaxingVideosItems,createPlaylist,getPlaylistByName
 };
