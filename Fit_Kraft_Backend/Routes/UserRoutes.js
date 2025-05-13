@@ -13,7 +13,7 @@ router.route('/delete').delete(protect, DeleteUser)
 router.route('/update').patch(protect, calculateMetrics, UpdateUser)
 router.route('/login').post(loginUser);
 router.get('/onboarding-status', protect, checkOnboardingStatus);
-router.get('/getbadges/:userid',getUserBadges)
+router.get('/getbadges/:userId',getUserBadges)
 router.post('/createbadge',createBadge)
 router.put('/updateuserbadges/:userid/:badgeid',assignBadgeToUser)
 router.get('/GetNotification/user/:userId',GetNotification)
