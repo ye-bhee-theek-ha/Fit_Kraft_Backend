@@ -4,6 +4,7 @@ const User=require('../Models/UserModel')
 const Badges=require('../Models/BadgesModel')
 const calculateMetrics = require('../middleware/calculateMetrics');
 const mongoose = require('mongoose');
+const MentalScore =require('../Models/MentallScoreModel')
 
 
 const jwt = require('jsonwebtoken');
@@ -381,6 +382,8 @@ const createBadge = async (req, res) => {
       return res.status(500).json({ message: 'Failed to assign badge', error: error.message }); // 500 Internal Server Error
     }
   };
+
+  
 
 
 module.exports = {getUser, CreateUser, DeleteUser,getUserBadges, UpdateUser, loginUser, checkOnboardingStatus, Onboarding,createBadge,assignBadgeToUser};

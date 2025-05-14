@@ -200,6 +200,70 @@ const createPlaylist = async (req, res) => {
     }
   };
 
+
+  const createMentalWellnessItem = async (req, res) => {
+    try {
+      // Destructure all possible fields from the request body
+      const {
+        title,
+        description,
+        type,
+        category,
+        imageUrl,
+        audioUrl,
+        videoUrl
+      } = req.body;
+  
+      // --- Optional Validations ---
+      // Although the schema fields are optional, you might want to ensure
+      // that at least some data is provided, or specific combinations.
+      // For example, ensure at least a title or description is present.
+      if (!title && !description && !audioUrl && !videoUrl && !imageUrl) {
+        return res.status(400).json({ message: 'Cannot create an empty mental wellness item. Please provide some content.' });
+      }
+  
+      // Validate 'type' if it's provided in the request body
+      if (type && !wellnessTypes.includes(type)) {
+        return res.status(400).json({
+          message: `Invalid wellness type: '${type}'. Supported types are: ${wellnessTypes.join(', ')}.`
+        });
+      }
+  
+      // Construct the data object for the new item.
+      // Only include fields that are actually provided in the request body
+      // to avoid passing undefined values to the model, though Mongoose handles this.
+      const itemData = {};
+      if (title !== undefined) itemData.title = title;
+      if (description !== undefined) itemData.description = description;
+      if (type !== undefined) itemData.type = type;
+      if (category !== undefined) itemData.category = category;
+      if (imageUrl !== undefined) itemData.imageUrl = imageUrl;
+      if (audioUrl !== undefined) itemData.audioUrl = audioUrl;
+      if (videoUrl !== undefined) itemData.videoUrl = videoUrl;
+  
+      // Create a new MentalWellness instance
+      const newItem = new MentalWellness(itemData);
+  
+      // Save the new item to the database
+      const savedItem = await newItem.save();
+  
+      // Send a 201 Created response with the newly created item
+      res.status(201).json(savedItem);
+  
+    } catch (error) {
+      // Log the error for debugging purposes
+      console.error('Error creating mental wellness item:', error);
+  
+      // Handle Mongoose validation errors (e.g., if 'type' is provided but not in enum)
+      if (error.name === 'ValidationError') {
+        return res.status(400).json({ message: 'Validation Error', errors: error.errors });
+      }
+  
+      // Send a generic server error message
+      res.status(500).json({ message: 'Server error. Could not create mental wellness item.' });
+    }
+  };
+
 module.exports = {
-    getMusicWellnessItems,getYogaWellnessItems,getSleepWellnessItems,getRelaxingVideosItems,createPlaylist,getPlaylistByName
+    getMusicWellnessItems,getYogaWellnessItems,getSleepWellnessItems,getRelaxingVideosItems,createPlaylist,getPlaylistByName,createMentalWellnessItem
 };
