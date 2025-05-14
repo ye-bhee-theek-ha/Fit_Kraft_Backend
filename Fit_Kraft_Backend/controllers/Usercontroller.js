@@ -5,7 +5,8 @@ const Badges=require('../Models/BadgesModel')
 const calculateMetrics = require('../middleware/calculateMetrics');
 const mongoose = require('mongoose');
 const MentalScore =require('../Models/MentallScoreModel')
-
+const FLASK_API_URL = 'http://127.0.0.1:5000/api/predict/mental_score';
+const axios = require('axios');
 
 const jwt = require('jsonwebtoken');
 
@@ -383,9 +384,146 @@ const createBadge = async (req, res) => {
     }
   };
 
+  const createMentalScore = async (req, res) => {
+    try {
+      // Extract userId from request parameters
+      const { userId } = req.params;
   
+      // --- Basic Validation ---
+      // Check if userId is provided
+      if (!userId || typeof userId !== 'string' || userId.trim() === '') {
+        return res.status(400).json({ message: 'User ID is required in the path and must be a non-empty string.' });
+      }
+  
+      // Optional: Check if a score record already exists for this user
+      // to prevent duplicates if that's the desired behavior.
+      const existingRecord = await MentalScore.findOne({ User: userId.trim() });
+      if (existingRecord) {
+        return res.status(409).json({ message: `A mental score record already exists for User: ${userId}` });
+      }
+  
+      // Create a new MentalScore instance
+      // User is set from params, Score and Previous_Score are initialized to 0.
+      const newMentalScore = new MentalScore({
+        User: userId.trim(),
+        Score: 0,
+        Previous_Score: 0
+      });
+  
+      // Save the new mental score to the database
+      const savedMentalScore = await newMentalScore.save();
+  
+      // Send a 201 Created response with the newly created document
+      res.status(201).json(savedMentalScore);
+  
+    } catch (error) {
+      // Log the error for debugging purposes
+      console.error('Error creating mental score:', error);
+  
+      // Handle Mongoose validation errors (if any are added to the schema later)
+      if (error.name === 'ValidationError') {
+        return res.status(400).json({ message: 'Validation Error', errors: error.errors });
+      }
+  
+      // Send a generic server error message
+      res.status(500).json({ message: 'Server error. Could not create mental score.' });
+    }
+  };
+
+  const updateUserMentalScore = async (req, res) => {
+    try {
+      const { userIdentifier } = req.params; // The 'User' string ID from the route
+  
+      // Extract new data points from the request body
+      // These are the names your Node.js API receives
+      const { Age, Mood_Score, Physical_Activity, Stress_Level } = req.body;
+  
+      // --- Validation for parameters ---
+      if (!userIdentifier || typeof userIdentifier !== 'string' || userIdentifier.trim() === '') {
+        return res.status(400).json({ message: 'User identifier is required in the path and must be a non-empty string.' });
+      }
+  
+      // Validate required body fields
+      const requiredFields = { Age, Mood_Score, Physical_Activity, Stress_Level };
+      for (const [field, value] of Object.entries(requiredFields)) {
+        if (value === undefined) {
+          return res.status(400).json({ message: `${field} is required in the request body.` });
+        }
+        if (typeof value !== 'number') { // Assuming Flask API expects numbers (floats)
+          return res.status(400).json({ message: `${field} must be a number.` });
+        }
+      }
+  
+      // 1. Find the existing MentalScore document for the User
+      const existingScoreDoc = await MentalScore.findOne({ User: userIdentifier.trim() });
+  
+      if (!existingScoreDoc) {
+        return res.status(404).json({ message: `Mental score record not found for User: ${userIdentifier}` });
+      }
+  
+      // 2. Make a POST request to the Flask server to get the new score
+      let newScoreFromFlask;
+      try {
+        // *** Keys reverted to use underscores to match Flask's data['key'] access ***
+        const flaskApiPayload = {
+          'Age': Age,
+          'Mood_Score': Mood_Score,
+          'Physical_Activity': Physical_Activity,
+          'Stress_Level': Stress_Level
+          // If your Flask API also needs the User identifier, add it here:
+          // 'User': userIdentifier.trim(),
+        };
+        console.log(`Requesting new score from Flask API for User: ${userIdentifier} with payload:`, flaskApiPayload);
+  
+        const flaskResponse = await axios.post(FLASK_API_URL, flaskApiPayload);
+  
+        // Adjust to read from "AI-Detected_Emotional_State"
+        // And convert the string value to a number
+        if (flaskResponse.data && flaskResponse.data["AI-Detected_Emotional_State"] !== undefined) {
+          const predictedValue = parseFloat(flaskResponse.data["AI-Detected_Emotional_State"]);
+          if (!isNaN(predictedValue)) {
+              newScoreFromFlask = predictedValue;
+              console.log(`Received new score from Flask: ${newScoreFromFlask}`);
+          } else {
+              console.error('Flask API returned a non-numeric score:', flaskResponse.data["AI-Detected_Emotional_State"]);
+              return res.status(500).json({ message: 'Received non-numeric score from prediction service.' });
+          }
+        } else {
+          console.error('Invalid response structure from Flask API (expected "AI-Detected_Emotional_State"):', flaskResponse.data);
+          return res.status(500).json({ message: 'Received invalid score format from prediction service.' });
+        }
+      } catch (apiError) {
+        console.error('Error calling Flask API:', apiError.message);
+        if (apiError.response) {
+          console.error('Flask API Response Status:', apiError.response.status);
+          console.error('Flask API Response Data:', apiError.response.data);
+          return res.status(502).json({
+            message: 'Failed to fetch new score from prediction service.',
+            error: apiError.response.data || apiError.message
+          });
+        }
+        return res.status(502).json({ message: 'Failed to fetch new score from prediction service.', error: apiError.message });
+      }
+  
+      // 3. Update the MentalScore document
+      existingScoreDoc.Previous_Score = existingScoreDoc.Score; // Current score becomes previous
+      existingScoreDoc.Score = newScoreFromFlask;             // New score from Flask
+  
+      // 4. Save the updated document
+      const updatedScoreDoc = await existingScoreDoc.save();
+  
+      res.status(200).json(updatedScoreDoc);
+  
+    } catch (error) {
+      console.error('Error updating mental score:', error);
+      if (error.name === 'ValidationError') {
+        return res.status(400).json({ message: 'Validation Error', errors: error.errors });
+      }
+      res.status(500).json({ message: 'Server error. Could not update mental score.' });
+    }
+  };
 
 
-module.exports = {getUser, CreateUser, DeleteUser,getUserBadges, UpdateUser, loginUser, checkOnboardingStatus, Onboarding,createBadge,assignBadgeToUser};
+module.exports = {getUser, CreateUser, DeleteUser,getUserBadges, UpdateUser, loginUser, checkOnboardingStatus, Onboarding,createBadge,assignBadgeToUser,createMentalScore,updateUserMentalScore};
 
 

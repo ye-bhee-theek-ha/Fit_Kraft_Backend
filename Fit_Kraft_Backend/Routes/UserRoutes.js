@@ -1,5 +1,5 @@
 const express = require("express");
-const {getUser,CreateUser,DeleteUser,UpdateUser,loginUser,checkOnboardingStatus, Onboarding,getUserBadges,createBadge,assignBadgeToUser}=require('../controllers/Usercontroller')
+const {getUser,CreateUser,DeleteUser,UpdateUser,loginUser,checkOnboardingStatus, Onboarding,getUserBadges,createBadge,assignBadgeToUser,createMentalScore,updateUserMentalScore}=require('../controllers/Usercontroller')
 
 const {CreateNotification,GetNotification,DeleteNotificationById}=require('../controllers/NotificatoinController')
 const calculateMetrics = require('../middleware/calculateMetrics');
@@ -19,7 +19,8 @@ router.put('/updateuserbadges/:userid/:badgeid',assignBadgeToUser)
 router.get('/GetNotification/user/:userId',GetNotification)
 router.post('/CreateNotification',CreateNotification)
 router.delete('/DeleteNotification/Notification/:notificationId',DeleteNotificationById)
-
+router.post('/CreateMentallScore/:userId',createMentalScore)
+router.put('/UpdateMentalScore/:userIdentifier',updateUserMentalScore)
 
 
 module.exports=router  
