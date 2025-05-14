@@ -200,7 +200,7 @@ const createPlaylist = async (req, res) => {
     }
   };
 
-
+  const wellnessTypes = ['YOGA', 'MUSIC', 'BODY_SCANNING', 'SLEEP', 'RELAXING_VIDEOS'];
   const createMentalWellnessItem = async (req, res) => {
     try {
       // Destructure all possible fields from the request body
