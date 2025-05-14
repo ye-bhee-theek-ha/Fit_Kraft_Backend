@@ -10,7 +10,7 @@ router.route('/get').get(protect, getUser)
 router.route('/create').post(CreateUser)
 router.route('/onboard').post(protect, Onboarding)
 router.route('/delete').delete(protect, DeleteUser)
-router.route('/update').patch(protect, calculateMetrics, UpdateUser)
+router.route('/update/user/:userId').patch(protect, calculateMetrics, UpdateUser)
 router.route('/login').post(loginUser);
 router.get('/onboarding-status', protect, checkOnboardingStatus);
 router.get('/getbadges/:userId',getUserBadges)

@@ -227,10 +227,14 @@ const DeleteUser = asyncHandler(async (req, res) => {
 
 
 const UpdateUser = asyncHandler(async (req, res) => {
-    // Define the fields that are allowed to be updated (password removed)
+    // Get userId from request parameters
+    const { userId } = req.params;
+
+    // Define the fields that are allowed to be updated
     const allowedFields = [
-        'name', 'nickname', 'email', // password removed
-        'height', 'weight', 'age', 'gender', 'goal'
+        'name', 'nickname', 'email',
+        'height', 'weight', 'age', 'gender', 'goal',
+        'activityLevel' // Added activityLevel
     ];
 
     // Create an object to hold only the allowed update data
@@ -240,8 +244,8 @@ const UpdateUser = asyncHandler(async (req, res) => {
     allowedFields.forEach(field => {
         // Check if the field exists in the request body
         if (req.body.hasOwnProperty(field)) {
-             // Add allowed fields directly to the update object
-             updateData[field] = req.body[field];
+            // Add allowed fields directly to the update object
+            updateData[field] = req.body[field];
         }
     });
 
@@ -254,7 +258,7 @@ const UpdateUser = asyncHandler(async (req, res) => {
         // Find the user by ID and update only the fields present in updateData
         // Using { $set: updateData } explicitly tells MongoDB to only update these fields
         const user = await User.findByIdAndUpdate(
-            req.user.id, // Get user ID from authenticated request (e.g., middleware)
+            userId, // Get user ID from req.params
             { $set: updateData },
             {
                 new: true, // Return the updated document
@@ -270,15 +274,18 @@ const UpdateUser = asyncHandler(async (req, res) => {
 
         // Exclude password from the returned user object for security
         // (Even though we don't update it here, we still don't want to send the existing hash)
-        const userResponse = user.toObject(); // Convert mongoose doc to plain object if needed
-        delete userResponse.password;
-
+        const userResponse = user.toObject();
+        
         res.status(200).json({ message: "User updated successfully", user: userResponse });
 
     } catch (error) {
         // Handle potential errors, e.g., validation errors
         if (error.name === 'ValidationError') {
             return res.status(400).json({ message: "Validation failed", errors: error.errors });
+        }
+        // Handle CastError if userId format is invalid
+        if (error.name === 'CastError' && error.path === '_id') {
+            return res.status(400).json({ message: "Invalid user ID format" });
         }
         // Log other unexpected errors for debugging
         console.error("Error updating user:", error);
