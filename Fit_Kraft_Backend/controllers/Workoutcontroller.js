@@ -5,8 +5,8 @@ const Exercise = require('../Models/ExerciseModel')
 const axios = require('axios');
 const Stored_Exercises = require('../Models/Stored_Exercises')
 const User=require('../Models/UserModel')
-const PYTHON_API_URL = 'http://127.0.0.1:5000/generate-workout';
-const WORKOUT_CREATE_URL = `http://localhost:5000/workout/create`;
+const PYTHON_API_URL = 'http://44.201.123.56:5000/generate-workout';
+const WORKOUT_CREATE_URL = `http://localhost:4000/workout/create`;
 
 
 const createWorkout = asyncHandler(async (req, res) => {
