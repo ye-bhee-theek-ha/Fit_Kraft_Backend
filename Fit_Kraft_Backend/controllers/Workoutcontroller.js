@@ -933,7 +933,7 @@ const generate_workout=asyncHandler(async (req, res) => {
         };
 
         let lastWeekWorkoutData = [];
-        const historyUrl = `http://localhost:5000/workout/get/last7days/${userId}`;
+        const historyUrl = `http://3.87.239.199:4000/workout/get/last7days/${userId}`;
         try {
             console.log(`Workspaceing last 7 days workout history from: ${historyUrl}`);
             const historyResponse = await axios.get(historyUrl);
@@ -1060,7 +1060,7 @@ const generate_workout=asyncHandler(async (req, res) => {
 
             try {
                 console.log(`Sending POST to ${WORKOUT_CREATE_URL} for date: ${dayPlan.date} with ${exercisesToCreate.length} exercises`);
-                const createResponse = await axios.post('http://localhost:5000/workout/create', workoutToCreatePayload);
+                const createResponse = await axios.post('http://3.87.239.199:4000/workout/create', workoutToCreatePayload);
                 console.log(`Workout for ${dayPlan.date} created successfully, ID: ${createResponse.data._id}`);
                 createdWorkoutsInfo.push({
                     date: dayPlan.date,
