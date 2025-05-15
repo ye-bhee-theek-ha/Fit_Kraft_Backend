@@ -372,7 +372,7 @@ const updateDieteryMealStatus = asyncHandler(async (req, res) => {
 
 const updateMealInDietaryPlan = asyncHandler(async (req, res) => {
     const { mealId } = req.params;
-    const updateData = req.body;
+    const requestBody = req.body; // Data sent by the client
 
     try {
         // Validate mealId
@@ -380,11 +380,30 @@ const updateMealInDietaryPlan = asyncHandler(async (req, res) => {
             return res.status(400).json({ message: 'Invalid meal ID' });
         }
 
-        // Update the meal
+        // Explicitly filter the request body to include only fields defined in the MealSchema
+        const filteredUpdateData = {};
+        const schemaPaths = Object.keys(Meal.schema.paths); // Get all defined paths/fields from the schema
+
+        for (const key in requestBody) {
+            // Check if the key from the request body is a valid field in the schema
+            // and that the key is actually a property of requestBody (not from prototype chain)
+            if (requestBody.hasOwnProperty(key) && schemaPaths.includes(key)) {
+                filteredUpdateData[key] = requestBody[key];
+            }
+        }
+
+        // Check if there's anything to update after filtering
+        if (Object.keys(filteredUpdateData).length === 0) {
+            return res.status(400).json({
+                message: 'No valid fields provided for update or fields do not match schema.'
+            });
+        }
+
+        // Update the meal using only the filtered data
         const updatedMeal = await Meal.findByIdAndUpdate(
             mealId,
-            { $set: updateData },
-            { new: true }
+            { $set: filteredUpdateData }, // Use the filtered data
+            { new: true, runValidators: true } // 'new: true' returns the updated doc, 'runValidators: true' ensures schema validations run on update
         );
 
         if (!updatedMeal) {
@@ -398,6 +417,10 @@ const updateMealInDietaryPlan = asyncHandler(async (req, res) => {
 
     } catch (err) {
         console.error("Error updating meal:", err);
+        // Handle Mongoose validation errors specifically
+        if (err.name === 'ValidationError') {
+            return res.status(400).json({ message: 'Validation Error', errors: err.errors });
+        }
         res.status(500).json({ message: 'Server error', error: err.message });
     }
 });
