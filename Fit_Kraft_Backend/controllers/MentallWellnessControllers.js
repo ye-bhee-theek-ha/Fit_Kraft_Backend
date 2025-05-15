@@ -33,7 +33,7 @@ const getYogaWellnessItems = asyncHandler(async (req, res) => {
 
     // Define the fields you want to retrieve from the database for Yoga items
     // Using 'title' from the schema, 'description', and 'imageUrl'
-    const fieldsToSelect = 'title description imageUrl';
+    const fieldsToSelect = 'title description audioUrl';
 
     // Find documents in the MentalWellness collection that match:
     // 1. The 'type' field must be 'YOGA'
@@ -48,6 +48,8 @@ const getYogaWellnessItems = asyncHandler(async (req, res) => {
         count: yogaItems.length, // Optionally include the number of items found
         data: yogaItems         // The array of yoga items (or an empty array if none found)
     });
+
+  
 
 })
 
